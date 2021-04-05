@@ -83,7 +83,4 @@ iterate_one(I,Prefix,L,Size) when is_list(L) andalso Size > 0 ->
 iterate_one(I,_Prefix,L,_Size) ->
   %logger:info("iterate_one ended here: ~p ~p",[L,_Size]),
   eleveldb:iterator_close(I),
-  if
-    is_binary(L) -> [];   % first call with key is binary, size is 0, nothing retrieved
-    true -> lists:reverse(L)
-  end.
+  lists:reverse(L).
