@@ -1,5 +1,5 @@
 {application, sipgraph,
- [{description, "An OTP application"},
+ [{description, "sip signalling analyzer"},
   {vsn, "0.1.0"},
   {registered, []},
   {mod, {sipgraph_app, []}},
@@ -7,7 +7,6 @@
    [kernel,
     stdlib,
     sasl,
-    mnesia,
     cowboy,
     eleveldb
    ]},

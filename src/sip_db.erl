@@ -59,11 +59,8 @@ read_prefix(Key,Size) ->
   gen_server:call(?MODULE,{read_prefix,{Key,Size}}).
 
 iterate_kv(Db,Key,Size) ->
-  case eleveldb:iterator(Db,[]) of
-    {ok,I} -> % iterator created successfully
-      iterate_one(I,Key,[],Size);
-    _ -> []
-  end.
+  {ok,I} = eleveldb:iterator(Db,[]),
+  iterate_one(I,Key,[],Size).
 
 %% read at most *Size* of item that start with *Key* from leveldb
 iterate_one(I,Prefix,L,Size) when is_list(L) andalso Size > 0 ->

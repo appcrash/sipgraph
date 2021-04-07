@@ -49,6 +49,15 @@ init([]) ->
     },
 
     #{
+      id => sip_session,
+      start => {sip_session,start_link,[]},
+      restart => permanent,
+      shutdown => infinity,
+      type => worker,
+      modules => [sip_session]
+    },
+
+    #{
       id => receiver,
       start => {receiver,start_link,[]},
       restart => permanent,
