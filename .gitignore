@@ -20,5 +20,4 @@ _checkouts/
 
 log/*
 logs/*
-leveldb/*
-sip_session/*
+db/*

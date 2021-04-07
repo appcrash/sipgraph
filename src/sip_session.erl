@@ -20,7 +20,7 @@
   timestamp     % in milliseconds
 }).
 
--type analyze_result() :: invalid | {ok, [{atom(),binary()}]}.
+-type analyze_result() :: invalid | {ok, [{atom(),string()}]}.
 
 init(State) ->
   Nodes = [node()],
@@ -33,10 +33,10 @@ init(State) ->
     mnesia:create_table(session,[
       {type,set},
       {attributes,record_info(fields,session)},
-      {index,[#session.caller,#session.callee]},
+      {index,[#session.caller,#session.callee,#session.timestamp]},
       {disc_only_copies,Nodes}
     ]),
-    mnesia:wait_for_tables([session],2000),
+    mnesia:wait_for_tables([session],5000),
     {ok,State}
   catch
     error:Reason ->
@@ -51,10 +51,15 @@ handle_call(Request,_From,State) ->
   {reply,Request,State}.
 
 handle_cast({packet,Packet},State) ->
-  R = analyze(Packet),
-  logger:info("analyze result is ~p",[R]),
-  {noreply,State};
-handle_cast({store,Session},State) ->
+  case analyze(Packet) of
+    {ok,S} ->
+      SR = to_session(#session{timestamp = os:system_time(millisecond)},S),
+      mnesia:transaction(
+	fun() ->
+	    mnesia:write(SR)
+	end);
+    invalid -> do_nothing
+  end,
   {noreply,State};
 handle_cast(_Request,State) ->
   {noreply,State}.
@@ -63,13 +68,24 @@ handle_cast(_Request,State) ->
 cast(Packet) ->
   gen_server:cast(?MODULE,{packet,Packet}).
 
+to_session(S,[]) -> S;
+to_session(S,[H|T]) ->
+  SS = case H of
+    {id,Id} -> S#session{id=Id};
+    {caller,Caller} -> S#session{caller=Caller};
+    {callee,Callee} -> S#session{callee=Callee};
+    {timestamp,Timestamp} -> S#session{timestamp=Timestamp};
+    _ -> S
+       end,
+  to_session(SS,T).
+
 %% search the packet binary with
 %% cmd is "INVITE"
 %% session id
 %% from with tag
 %% to without tag
 %% and return these info as list of tuple:
-%% {ok,[{session_id,Id},{from,Caller},{to,Callee}]}
+%% {ok,[{id,Id},{caller,Caller},{callee,Callee}]} in form of record #session
 %% or return invalid if not a valid initial INVITE
 -spec analyze(binary()) -> analyze_result().
 analyze(Packet) ->
@@ -80,7 +96,6 @@ analyze_one(_,R,_) when length(R) == 3 ->
 analyze_one(_,_,[]) -> invalid;
 analyze_one(_,_,[<<>> | _T]) ->  invalid;    % all headers are checked
 analyze_one(all,R,[H|T]) ->
-  logger:info("all R is ~p H is ~p",[R,H]),
   case analyze_one(inspect_cmd,H) of
     invalid -> invalid;
     found -> analyze_one(only_header,R,T);
@@ -92,7 +107,6 @@ analyze_one(all,R,[H|T]) ->
       end
   end;
 analyze_one(only_header,R,[H|T]) ->
-  logger:info("only_header R is ~p H is ~p",[R,H]),
   case analyze_one(inspect_header,H) of
     invalid -> invalid;
     not_found -> analyze_one(only_header,R,T);
@@ -111,27 +125,27 @@ analyze_one(inspect_cmd,Line) ->
 analyze_one(inspect_header,Line) ->
   case re:run(Line,?RE_REQUEST_HEADER,[{capture,[1,2],list}]) of
     {match,[Header,Value]} ->
-      logger:info("header is ~p",[Header]),
-      case Header of
-	"Session-Id" ->
-	  {found,{session_id,Value}};
-	"From" ->
+      H = string:to_lower(Header),
+      case H of
+	"session-id" ->
+	  {found,{id,Value}};
+	"from" ->
 	  case re:run(Line,?RE_HAS_TAG) of
 	    {match,_} ->
 	      case re:run(Line,?RE_EXTRACT_PHONE,[{capture,[1],list}]) of
 		{match,[Phone]} ->
-		  {found,{from,Phone}};
+		  {found,{caller,Phone}};
 		_ -> invalid
 	      end;
 	    _ -> invalid   % from without tag
 	  end;
-	"To" ->
+	"to" ->
 	  case re:run(Line,?RE_HAS_TAG) of
 	    {match,_} -> invalid;    % to already has tag, not first invite
 	    _ ->
 	      case re:run(Line,?RE_EXTRACT_PHONE,[{capture,[1],list}]) of
 		{match,[Phone]} ->
-		  {found,{to,Phone}};
+		  {found,{callee,Phone}};
 		_ -> invalid
 	      end
 	  end;

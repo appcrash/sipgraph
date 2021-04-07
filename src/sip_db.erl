@@ -2,15 +2,21 @@
 
 -behaviour(gen_server).
 -export([init/1,handle_call/3,handle_cast/2,start_link/0,terminate/2]).
--export([store/2,read_prefix/2]).
+-export([store/1,read_prefix/2]).
 -define(LEVELDB_OPEN_OPTION,[{create_if_missing,true}]).
 -define(MAX_ITEM_READ_SIZE,200).
+
+-define(RE_SESSION_ID,"(?i)^session-id:\\s*([^\\s]+)\\s*$").
+
 -record(state,{
   db
 }).
 
+-type analyze_result() :: invalid | {ok,binary(),binary()}.
+
 
 init(_) ->
+  ets:new(session_info,[named_table,set]),
   {ok,Path} = application:get_env(leveldb),
   case eleveldb:open(Path,?LEVELDB_OPEN_OPTION) of
     {ok,Db} ->
@@ -33,11 +39,15 @@ handle_call({read_prefix,{Key,Size}},_From,#state{db = Db} = State) ->
 handle_call(Request,_From,State) ->
   {reply,Request,State}.
 
-handle_cast({store,Key,Value},#state{db = Db}=State) ->
-  case eleveldb:put(Db,Key,Value,[{sync,false}]) of
-    {error,Reason} ->
-      logger:error("leveldb write error: ~p",[Reason]);
-    ok -> ok
+handle_cast({store,Packet},#state{db = Db}=State) ->
+  case analyze(Packet) of
+    {ok,Key,OriginPacket} ->
+      case eleveldb:put(Db,Key,OriginPacket,[{sync,false}]) of    % store whole packet
+	{error,Reason} ->
+	  logger:error("leveldb write error: ~p",[Reason]);
+	ok -> ok
+      end;
+    invalid -> do_nothing
   end,
   {noreply,State};
 handle_cast(_Request,State) ->
@@ -50,9 +60,10 @@ terminate(_Reason,#state{db = Db} = _State) ->
     R -> R
   end.
 
--spec store(binary(),binary()) -> ok.
-store(Key,Value) ->
-  gen_server:cast(?MODULE,{store,Key,Value}).
+-spec store(binary()) -> ok.
+store(Packet) ->
+  gen_server:cast(?MODULE,{store,Packet}).
+
 
 -spec read_prefix(binary(),integer()) -> list().
 read_prefix(Key,Size) ->
@@ -81,3 +92,31 @@ iterate_one(I,_Prefix,L,_Size) ->
   %logger:info("iterate_one ended here: ~p ~p",[L,_Size]),
   eleveldb:iterator_close(I),
   lists:reverse(L).
+
+%% first line of packet would always be in form of:
+%% session-id: xxxxxx
+%% otherwise it is not recognized by us
+-spec analyze(binary()) -> analyze_result().
+analyze(Packet) ->
+  case binary:split(Packet,<<"\r\n">>) of  % split only cut in first occurence once
+    [SL,OriginPacket] ->
+      case re:run(SL,?RE_SESSION_ID,[{capture,[1],list}]) of
+	{match,[Sid]} -> % session id found
+	  case ets:lookup(session_info,Sid) of
+	    [{_,Seq}] ->
+	      ets:update_counter(session_info,Sid,{2,1}),  % increase seq counter by 1
+	      Key = list_to_binary(io_lib:format("~s_~4..0B",[Sid,Seq])), % seq number with 4 characters wide padding 0
+	      {ok,Key,OriginPacket};
+	    _ ->  % the first session seen, track it as new session, counter starts at 1
+	      ets:insert(session_info,{Sid,1}),
+	      Key = list_to_binary(io_lib:format("~s_~4..0B",[Sid,1])), % seq number with 4 characters wide padding 0
+	      {ok,Key,OriginPacket}
+	  end;
+	_ ->  % can not recognized first line as session id
+	  logger:error("invalid packet without session id, first line: ~p",[SL]),
+	  invalid
+      end;
+    _ -> % invalid packet, can not even be split
+      logger:error("invalid packet: ~p",[Packet]),
+      invalid
+  end.
