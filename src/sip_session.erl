@@ -2,7 +2,13 @@
 -behaviour(gen_server).
 
 -export([init/1,handle_call/3,handle_cast/2,start_link/0]).
--export([cast/1]).
+-export([cast/1,query/4]).
+
+%% this module analyze packet and record INVITE signalling info
+%% only the initial INVITE is written to mnesia database, i.e. re-INVITE
+%% would be passed.
+%% also provide query function: by session_id | caller num | callee num
+
 
 % pattern: INVITE sip:+8617871233155@hb.ims.mnc000.mcc460.3gppnetwork.org SIP/2.0
 -define(RE_REQUEST_COMMAND,"(?i)^([\\w]+)\\s+.+\\s+SIP\/2\.0\\s*$").
@@ -13,11 +19,12 @@
 % extract caller/callee info from  From/To value
 -define(RE_EXTRACT_PHONE,"(?i)[^<]*<\\s*(?:tel|sip):\\+?(?:86)?(\\d+).*").
 
+
 -record(session,{
-  id,
-  caller,
-  callee,
-  timestamp     % in milliseconds
+  id :: string(),
+  caller :: string(),
+  callee :: string(),
+  timestamp :: integer()    % in milliseconds
 }).
 
 -type analyze_result() :: invalid | {ok, [{atom(),string()}]}.
@@ -47,6 +54,17 @@ init(State) ->
 start_link() ->
   gen_server:start_link({local,?MODULE},?MODULE,[],[]).
 
+
+handle_call({query,{F,V,Start,End}},_From,State) ->
+  R = case query_by_field(F,V,Start,End) of
+	not_found -> [];
+	SessionList ->
+	  [#{
+	     <<"session">> => session_to_map(S),
+	     <<"signal">> => session_to_signalling(S#session.id)
+	    } || S <- SessionList]
+      end,
+  {reply,R,State};
 handle_call(Request,_From,State) ->
   {reply,Request,State}.
 
@@ -68,6 +86,9 @@ handle_cast(_Request,State) ->
 cast(Packet) ->
   gen_server:cast(?MODULE,{packet,Packet}).
 
+query(Field,Value,TsStart,TsEnd) ->
+  gen_server:call(?MODULE,{query,{Field,Value,TsStart,TsEnd}}).
+
 to_session(S,[]) -> S;
 to_session(S,[H|T]) ->
   SS = case H of
@@ -78,6 +99,59 @@ to_session(S,[H|T]) ->
     _ -> S
        end,
   to_session(SS,T).
+
+-spec session_to_map(#session{}) -> map().
+session_to_map(S) ->
+  #{
+    <<"id">> => list_to_binary(S#session.id),
+    <<"caller">> => list_to_binary(S#session.caller),
+    <<"callee">> => list_to_binary(S#session.callee),
+    <<"timestamp">> => S#session.timestamp
+   }.
+
+%% read all signalling data as binary given session id
+%% all data in the list are the same order they are received
+-spec session_to_signalling(string()) -> [binary()].
+session_to_signalling(SessinId) ->
+  P = list_to_binary(SessinId),
+  Prefix = <<P/binary,"_">>,   % all signalling start withs <<session_name>>_
+  sip_db:read_prefix(Prefix,1000).
+
+
+-spec query_by_field(atom(),string(),integer(),integer()) -> [#session{}] | not_found.
+query_by_field(ByField,Value,TsStart,TsEnd) ->
+  MatchHead = case ByField of
+		id -> #session{id='$1',timestamp='$2',_='_'};
+		caller -> #session{caller='$1',timestamp='$2',_='_'};
+		callee -> #session{callee='$1',timestamp='$2',_='_'}
+	      end,
+  MatchSpec =
+    [
+     {MatchHead,
+      % Guard:    (id == value) && (start < timestamp < end)
+      [
+       {'and',
+      	{'=:=','$1',Value},
+      	{'and',
+      	 {'=<',TsStart,'$2'},
+      	 {'=<','$2',TsEnd}
+      	}
+       }
+      ],
+      % Body, whole record here
+      ['$_']
+     }
+    ],
+  TR = mnesia:transaction(
+    fun() ->
+	mnesia:select(session,MatchSpec,read)
+    end
+	),
+  case TR of
+    {atomic,R} -> R;
+    _ -> not_found
+  end.
+
 
 %% search the packet binary with
 %% cmd is "INVITE"

@@ -42,6 +42,7 @@ handle_call(Request,_From,State) ->
 handle_cast({store,Packet},#state{db = Db}=State) ->
   case analyze(Packet) of
     {ok,Key,OriginPacket} ->
+      logger:info("analyze key is ~p",[Key]),
       case eleveldb:put(Db,Key,OriginPacket,[{sync,false}]) of    % store whole packet
 	{error,Reason} ->
 	  logger:error("leveldb write error: ~p",[Reason]);
@@ -102,14 +103,15 @@ analyze(Packet) ->
     [SL,OriginPacket] ->
       case re:run(SL,?RE_SESSION_ID,[{capture,[1],list}]) of
 	{match,[Sid]} -> % session id found
+	  Ts = os:system_time(millisecond),
 	  case ets:lookup(session_info,Sid) of
 	    [{_,Seq}] ->
 	      ets:update_counter(session_info,Sid,{2,1}),  % increase seq counter by 1
-	      Key = list_to_binary(io_lib:format("~s_~4..0B",[Sid,Seq])), % seq number with 4 characters wide padding 0
+	      Key = list_to_binary(io_lib:format("~s_~4..0B_~B",[Sid,Seq+1,Ts])), % seq number with 4 characters wide padding 0
 	      {ok,Key,OriginPacket};
 	    _ ->  % the first session seen, track it as new session, counter starts at 1
 	      ets:insert(session_info,{Sid,1}),
-	      Key = list_to_binary(io_lib:format("~s_~4..0B",[Sid,1])), % seq number with 4 characters wide padding 0
+	      Key = list_to_binary(io_lib:format("~s_~4..0B_~B",[Sid,1,Ts])), % seq number with 4 characters wide padding 0
 	      {ok,Key,OriginPacket}
 	  end;
 	_ ->  % can not recognized first line as session id
