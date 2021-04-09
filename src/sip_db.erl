@@ -1,11 +1,11 @@
 -module(sip_db).
 
 -behaviour(gen_server).
--export([init/1,handle_call/3,handle_cast/2,start_link/0,terminate/2]).
+-export([init/1,handle_call/3,handle_cast/2,handle_info/2,start_link/0,terminate/2]).
 -export([store/1,read_prefix/2]).
 -define(LEVELDB_OPEN_OPTION,[{create_if_missing,true}]).
 -define(MAX_ITEM_READ_SIZE,200).
-
+-define(SESSION_EXPIRE_TIME,600000).		% session expiration check in 10-mins
 -define(RE_SESSION_ID,"(?i)^session-id:\\s*([^\\s]+)\\s*$").
 
 -record(state,{
@@ -42,7 +42,6 @@ handle_call(Request,_From,State) ->
 handle_cast({store,Packet},#state{db = Db}=State) ->
   case analyze(Packet) of
     {ok,Key,OriginPacket} ->
-      logger:info("analyze key is ~p",[Key]),
       case eleveldb:put(Db,Key,OriginPacket,[{sync,false}]) of    % store whole packet
 	{error,Reason} ->
 	  logger:error("leveldb write error: ~p",[Reason]);
@@ -53,6 +52,25 @@ handle_cast({store,Packet},#state{db = Db}=State) ->
   {noreply,State};
 handle_cast(_Request,State) ->
   {noreply,State}.
+
+
+handle_info({check_session,S,ExpireTs},State) ->
+  case ets:lookup(session_info,S) of
+    [{_,_,LastestTs}] ->
+      Diff = ExpireTs - LastestTs,
+      if
+	Diff < ?SESSION_EXPIRE_TIME -> 		% the session is active, extend the expiration timestamp
+	  do_expire_timer(S,2 * ?SESSION_EXPIRE_TIME,ExpireTs);
+	true ->
+	  logger:info("delete expired session ~p",[S]),
+	  ets:delete(session_info,S)
+      end;
+    _ -> not_found
+  end,
+  {noreply,State};
+handle_info(_,State) ->
+  {noreply,State}.
+
 
 terminate(_Reason,#state{db = Db} = _State) ->
   case eleveldb:close(Db) of
@@ -97,6 +115,7 @@ iterate_one(I,_Prefix,L,_Size) ->
 %% first line of packet would always be in form of:
 %% session-id: xxxxxx
 %% otherwise it is not recognized by us
+%% insert/update to ets: {session_id,seq,latest_timestamp} once a packet handled
 -spec analyze(binary()) -> analyze_result().
 analyze(Packet) ->
   case binary:split(Packet,<<"\r\n">>) of  % split only cut in first occurence once
@@ -105,12 +124,17 @@ analyze(Packet) ->
 	{match,[Sid]} -> % session id found
 	  Ts = os:system_time(millisecond),
 	  case ets:lookup(session_info,Sid) of
-	    [{_,Seq}] ->
-	      ets:update_counter(session_info,Sid,{2,1}),  % increase seq counter by 1
+	    [{_,Seq,_}] ->
+	      %% increase seq counter by 1 and update timestamp
+	      ets:update_element(session_info,Sid,[{2,Seq + 1},{3,Ts}]),
 	      Key = list_to_binary(io_lib:format("~s_~4..0B_~B",[Sid,Seq+1,Ts])), % seq number with 4 characters wide padding 0
 	      {ok,Key,OriginPacket};
-	    _ ->  % the first session seen, track it as new session, counter starts at 1
-	      ets:insert(session_info,{Sid,1}),
+	    _ ->
+	      %% the first session seen, track it as new session, counter starts at 1
+	      %% also start the timer to expire the session or the ets would run out of memory
+	      ets:insert(session_info,{Sid,1,Ts}),
+	      do_expire_timer(Sid,2 * ?SESSION_EXPIRE_TIME,Ts),
+	      logger:info("sip_db: new session created ~p",[Sid]),
 	      Key = list_to_binary(io_lib:format("~s_~4..0B_~B",[Sid,1,Ts])), % seq number with 4 characters wide padding 0
 	      {ok,Key,OriginPacket}
 	  end;
@@ -122,3 +146,6 @@ analyze(Packet) ->
       logger:error("invalid packet: ~p",[Packet]),
       invalid
   end.
+
+do_expire_timer(S,After,Now) ->
+  erlang:send_after(After,self(),{check_session,S,After + Now}).

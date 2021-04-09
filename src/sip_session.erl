@@ -83,11 +83,17 @@ handle_cast(_Request,State) ->
   {noreply,State}.
 
 
+
+%% ##################### API ###########################
 cast(Packet) ->
   gen_server:cast(?MODULE,{packet,Packet}).
 
 query(Field,Value,TsStart,TsEnd) ->
   gen_server:call(?MODULE,{query,{Field,Value,TsStart,TsEnd}}).
+
+%% #################### API #############################
+
+
 
 to_session(S,[]) -> S;
 to_session(S,[H|T]) ->
