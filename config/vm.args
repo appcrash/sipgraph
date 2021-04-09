@@ -1,6 +1,6 @@
--sname smartlb
+-sname sipgraph
 
--setcookie smartlb_cookie
+-setcookie sipgraph_cookie
 
 +P 1048576
 +Q 1048576 

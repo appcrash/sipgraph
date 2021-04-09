@@ -8,8 +8,10 @@
     stdlib,
     sasl,
     cowboy,
+    jsone,
     eleveldb
    ]},
+  {included_applications,[mnesia]},
   {env,[]},
   {modules, []},
 
