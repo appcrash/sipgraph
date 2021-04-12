@@ -40,8 +40,11 @@ reuse_port(Option) ->
     {unix,linux} ->
       %% linux,SOL_SOCKET:1, SO_REUSEPORT:15
       [{raw,1,15,<<1:32/native>>} | Option];
+    {unix,freebsd} ->
+      %% for freebsd, SOL_SOCKET:0xffff, SO_REUSEPORT_LB:0x00010000
+      [{raw,16#ffff,16#00010000,<<1:32/native>>} | Option];
     {unix,_} ->
-      %% for bsd/darwin, SOL_SOCKET:0xffff, SO_REUSEPORT:0x00000200
+      %% for other_bsd/darwin, SOL_SOCKET:0xffff, SO_REUSEPORT:0x00000200
       [{raw,16#ffff,16#0200,<<1:32/native>>} | Option];
     _ -> Option
   end.

@@ -71,13 +71,22 @@ handle_call(Request,_From,State) ->
 handle_cast({packet,Packet},State) ->
   case analyze(Packet) of
     {ok,S} ->
-      SR = to_session(#session{timestamp = os:system_time(millisecond)},S),
-      mnesia:transaction(
-	fun() ->
-	    mnesia:write(SR)
-	end);
+      {id,Sid} = lists:keyfind(id,1,S),
+      case sip_db:session_exist(Sid) of
+	false ->
+	  logger:info("session not exist, create it: ~p",[Sid]),
+	  SR = to_session(#session{timestamp = os:system_time(millisecond)},S),
+	  mnesia:transaction(
+	    fun() ->
+		mnesia:write(SR)
+	    end);
+	true ->
+	  logger:info("session exist, ignore this INVITE ~p",[Sid]), % may be a right-leg invite
+	  do_nothing
+      end;
     invalid -> do_nothing
   end,
+  sip_db:store(Packet),
   {noreply,State};
 handle_cast(_Request,State) ->
   {noreply,State}.
@@ -217,11 +226,11 @@ analyze_one(inspect_header,Line) ->
 		  {found,{caller,Phone}};
 		_ -> invalid
 	      end;
-	    _ -> invalid   % from without tag
+	    _ -> invalid   % "from" without tag
 	  end;
 	"to" ->
 	  case re:run(Line,?RE_HAS_TAG) of
-	    {match,_} -> invalid;    % to already has tag, not first invite
+	    {match,_} -> invalid;    % "to" already has tag, not first invite
 	    _ ->
 	      case re:run(Line,?RE_EXTRACT_PHONE,[{capture,[1],list}]) of
 		{match,[Phone]} ->

@@ -15,7 +15,6 @@ handle_call(Request,_From,State) ->
   {reply,Request,State}.
 
 handle_cast({packet,Packet},State) ->
-  sip_db:store(Packet),
   sip_session:cast(Packet),
   {noreply,State};
 handle_cast(_Request,State) ->

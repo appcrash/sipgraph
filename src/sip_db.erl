@@ -2,7 +2,7 @@
 
 -behaviour(gen_server).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,start_link/0,terminate/2]).
--export([store/1,read_prefix/2]).
+-export([store/1,read_prefix/2,session_exist/1]).
 -define(LEVELDB_OPEN_OPTION,[{create_if_missing,true}]).
 -define(MAX_ITEM_READ_SIZE,200).
 -define(SESSION_EXPIRE_TIME,600000).		% session expiration check in 10-mins
@@ -36,6 +36,9 @@ handle_call({read_prefix,{Key,Size}},_From,#state{db = Db} = State) ->
 	true -> []
       end,
   {reply,R,State};
+handle_call({is_session_exist,Key},_From,State) -> % return true if session exists
+  Exist = ets:member(session_info,Key),
+  {reply,Exist,State};
 handle_call(Request,_From,State) ->
   {reply,Request,State}.
 
@@ -54,6 +57,7 @@ handle_cast(_Request,State) ->
   {noreply,State}.
 
 
+%% expire timer schedules 'check_session' after session created
 handle_info({check_session,S,ExpireTs},State) ->
   case ets:lookup(session_info,S) of
     [{_,_,LastestTs}] ->
@@ -79,14 +83,18 @@ terminate(_Reason,#state{db = Db} = _State) ->
     R -> R
   end.
 
+%% ################   API   ##################
 -spec store(binary()) -> ok.
 store(Packet) ->
   gen_server:cast(?MODULE,{store,Packet}).
 
-
 -spec read_prefix(binary(),integer()) -> list().
 read_prefix(Key,Size) ->
   gen_server:call(?MODULE,{read_prefix,{Key,Size}}).
+
+-spec session_exist(string()) -> boolean().
+session_exist(Key) ->
+  gen_server:call(?MODULE,{is_session_exist,Key}).
 
 iterate_kv(Db,Key,Size) ->
   {ok,I} = eleveldb:iterator(Db,[]),
