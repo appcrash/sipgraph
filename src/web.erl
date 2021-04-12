@@ -10,8 +10,10 @@ init(State) ->
       {"/sip/:operation",web_handler,[]}
     ]}
   ]),
+  {_,Ip} = application:get_env(http_ip),
+  {ok,Addr} = inet:parse_ipv4_address(Ip),
   {_,Port} = application:get_env(http_port),
-  case cowboy:start_clear(http,[{port,Port}],#{
+  case cowboy:start_clear(http,[{ip,Addr},{port,Port}],#{
   env => #{dispatch => Dispatch}}) of
     {ok,_} ->
       {ok,State};

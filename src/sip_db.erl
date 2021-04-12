@@ -16,6 +16,7 @@
 
 
 init(_) ->
+  %% session_info table: key is session_id :: string()
   ets:new(session_info,[named_table,set]),
   {ok,Path} = application:get_env(leveldb),
   case eleveldb:open(Path,?LEVELDB_OPEN_OPTION) of
