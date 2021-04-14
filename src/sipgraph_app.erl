@@ -12,12 +12,12 @@
 -include("common.hrl").
 
 start(_StartType, _StartArgs) ->
-    case init_mnesia() of
-      {error,R} -> {error,R};
-      ok ->
-	web:start_link(),
-	sipgraph_sup:start_link()
-    end.
+  case init_mnesia() of
+    {error,R} -> {error,R};
+    ok ->
+      web:start_link(),
+      sipgraph_sup:start_link()
+  end.
 
 stop(_State) ->
     ok.

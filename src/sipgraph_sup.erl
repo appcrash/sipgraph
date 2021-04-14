@@ -31,6 +31,15 @@ init([]) ->
                  period => 1},
     ChildSpecs = [
     #{
+      id => metric,
+      start => {metric,start_link,[]},
+      restart => permanent,
+      shutdown => infinity,
+      type => worker,
+      modules => [metric]
+    },
+
+    #{
       id => packet,
       start => {packet,start_link,[]},
       restart => permanent,
