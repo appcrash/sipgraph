@@ -10,7 +10,7 @@
     cowboy,
     jsone
    ]},
-  {included_applications,[mnesia]},
+  {included_applications,[mnesia,mnesia_rocksdb]},
   {env,[]},
   {modules, []},
 
