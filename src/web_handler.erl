@@ -1,6 +1,7 @@
 -module(web_handler).
 -export([init/2]).
 
+-include("common.hrl").
 %% this handler provider query method:
 %% get_session,get_caller,get_callee
 %% all of them use the same argument
@@ -29,7 +30,15 @@ sip_get_session_by_field(Req,Opts,Field) ->
     MM = check_timestamp(M),
     #{id := Id,ts_start := Start,ts_end := End} = MM,
     SessionList = sip_session:query(Field,binary_to_list(Id),Start,End),
-    J = jsone:encode(SessionList),
+    SM = lists:map(
+	   fun(#session{id=Sid}=S) ->
+	       SignalList = sip_db:read_prefix(Sid,1000),
+	       #{
+		 <<"session">> => session_to_map(S),
+		 <<"signal">> => [signal_to_map(Sig) || Sig <- SignalList]
+		 }
+	   end,SessionList),
+    J = jsone:encode(SM),
     Req1 = cowboy_req:reply(200,
 			    #{
 			      <<"conntent-type">> => <<"application/json,charset=utf-8">>
@@ -54,3 +63,23 @@ check_timestamp(#{ts_start := S,ts_end := E} = M) ->
       maps:update(ts_end,os:system_time(millisecond),M1);
     _ -> M1
   end.
+
+
+-spec session_to_map(#session{}) -> map().
+session_to_map(S) ->
+  #{
+    <<"session_id">> => list_to_binary(S#session.id),
+    <<"caller">> => list_to_binary(S#session.caller),
+    <<"callee">> => list_to_binary(S#session.callee),
+    <<"timestamp">> => S#session.timestamp
+   }.
+
+-spec signal_to_map(#signal{}) -> map().
+signal_to_map(
+  #signal{signal_id=#signal_key{seq=Seq},
+	 timestamp=Ts,data=Packet}) ->
+  #{
+    <<"seq">> => Seq,
+    <<"timestamp">> => Ts,
+    <<"packet">> => Packet
+   }.

@@ -1,8 +1,11 @@
 -module(sip_session).
 -behaviour(gen_server).
 
--export([init/1,handle_call/3,handle_cast/2,start_link/0]).
+-export([init/1,handle_call/3,handle_cast/2,handle_info/2,start_link/0]).
 -export([cast/1,query/4]).
+
+
+-include("common.hrl").
 
 %% this module analyze packet and record INVITE signalling info
 %% only the initial INVITE is written to mnesia database, i.e. re-INVITE
@@ -10,59 +13,31 @@
 %% also provide query function: by session_id | caller num | callee num
 
 
-% pattern: INVITE sip:+8617871233155@hb.ims.mnc000.mcc460.3gppnetwork.org SIP/2.0
+% cmd pattern, example: INVITE sip:+8617871233155@hb.ims.mnc000.mcc460.3gppnetwork.org SIP/2.0
 -define(RE_REQUEST_COMMAND,"(?i)^([\\w]+)\\s+.+\\s+SIP\/2\.0\\s*$").
 % pattern: Header: Value
 -define(RE_REQUEST_HEADER,"^([-\\w]+)\:\s*(.*)$").
-% check whether from/to header with tag
--define(RE_HAS_TAG,".*tag=(.+)$").
 % extract caller/callee info from  From/To value
 -define(RE_EXTRACT_PHONE,"(?i)[^<]*<\\s*(?:tel|sip):\\+?(?:86)?(\\d+).*").
+% extract session-id line
+-define(RE_SESSION_ID,"(?i)^session-id:\\s*(\\S+)\\s*$").
 
 
--record(session,{
-  id :: string(),
-  caller :: string(),
-  callee :: string(),
-  timestamp :: integer()    % in milliseconds
-}).
-
--type analyze_result() :: invalid | {ok, [{atom(),string()}]}.
+-type analyze_result() :: invalid | {ok, map()}.
 
 init(State) ->
-  Nodes = [node()],
-  {ok,Dbpath} = application:get_env(sip_session_db),
-  application:set_env(mnesia,dir,Dbpath),
-
-  try
-    mnesia:create_schema(Nodes),
-    mnesia:start(),
-    mnesia:create_table(session,[
-      {type,set},
-      {attributes,record_info(fields,session)},
-      {index,[#session.caller,#session.callee,#session.timestamp]},
-      {disc_only_copies,Nodes}
-    ]),
-    mnesia:wait_for_tables([session],5000),
-    {ok,State}
-  catch
-    error:Reason ->
-      logger:error("start sip session error: ~p",[Reason]),
-      {error,Reason}
-  end.
+  %% session_info table, record:
+  %% {session_id :: string(), seq :: integer(), lastest_timestamp :: integer()}
+  ets:new(session_info,[named_table,set]),
+  {ok,State}.
 
 start_link() ->
   gen_server:start_link({local,?MODULE},?MODULE,[],[]).
 
-
 handle_call({query,{F,V,Start,End}},_From,State) ->
   R = case query_by_field(F,V,Start,End) of
 	not_found -> [];
-	SessionList ->
-	  [#{
-	     <<"session">> => session_to_map(S),
-	     <<"signal">> => session_to_signalling(S#session.id)
-	    } || S <- SessionList]
+	SessionList -> SessionList
       end,
   {reply,R,State};
 handle_call(Request,_From,State) ->
@@ -70,26 +45,48 @@ handle_call(Request,_From,State) ->
 
 handle_cast({packet,Packet},State) ->
   case analyze(Packet) of
-    {ok,S} ->
-      {id,Sid} = lists:keyfind(id,1,S),
-      case sip_db:session_exist(Sid) of
-	false ->
-	  logger:info("session not exist, create it: ~p",[Sid]),
-	  SR = to_session(#session{timestamp = os:system_time(millisecond)},S),
-	  mnesia:transaction(
-	    fun() ->
-		mnesia:write(SR)
-	    end);
-	true ->
-	  logger:info("session exist, ignore this INVITE ~p",[Sid]), % may be a right-leg invite
-	  do_nothing
-      end;
-    invalid -> do_nothing
+    {ok,M} ->
+      #{id := Sid,cmd := Cmd,origin := OriginPacket} = M,
+      case update_session_info(Sid) of
+	{exist,Seq} ->
+	  sip_db:store(Sid,Seq,OriginPacket);
+	new_session ->
+	  case Cmd of
+	    "invite" ->
+	      logger:info("record session: ~p",[Sid]),
+	      SR = map_to_session(M),
+	      mnesia:dirty_write(SR),
+	      sip_db:store(Sid,1,OriginPacket);
+	    _ ->
+	      logger:error("first packet of session(~p) with cmd ~p",[Sid,Cmd])
+	  end
+	end;
+    invalid ->
+      logger:error("invalid packet, head of packet: ~p",[binary:part(Packet,{0,100})]),
+      do_nothing
   end,
-  sip_db:store(Packet),
   {noreply,State};
 handle_cast(_Request,State) ->
   {noreply,State}.
+
+%% handle session
+%% create new record in ets, start expiration timer if it's new session
+%% update sequence_counter/timestamp if it already exists
+-spec update_session_info(string()) -> new_session | {exist,Seq :: integer()}.
+update_session_info(Sid) ->
+  Ts = os:system_time(millisecond),
+  case ets:lookup(session_info,Sid) of
+    [{_,Seq,_}] ->
+      %% increase seq counter by 1 and update timestamp
+      ets:update_element(session_info,Sid,[{2,Seq + 1},{3,Ts}]),
+      {exist,Seq + 1};
+    _ ->
+      %% first time session seen, track it as new session, counter starts at 1
+      %% also start the timer to expire the session or the ets would run out of memory
+      ets:insert(session_info,{Sid,1,Ts}),
+      do_expire_timer(Sid,2 * ?SESSION_EXPIRE_TIME,Ts),
+      new_session
+  end.
 
 
 
@@ -97,49 +94,25 @@ handle_cast(_Request,State) ->
 cast(Packet) ->
   gen_server:cast(?MODULE,{packet,Packet}).
 
+-spec query(atom(),string(),integer(),integer()) -> [#session{}].
 query(Field,Value,TsStart,TsEnd) ->
   gen_server:call(?MODULE,{query,{Field,Value,TsStart,TsEnd}}).
 
 %% #################### API #############################
 
-
-
-to_session(S,[]) -> S;
-to_session(S,[H|T]) ->
-  SS = case H of
-    {id,Id} -> S#session{id=Id};
-    {caller,Caller} -> S#session{caller=Caller};
-    {callee,Callee} -> S#session{callee=Callee};
-    {timestamp,Timestamp} -> S#session{timestamp=Timestamp};
-    _ -> S
-       end,
-  to_session(SS,T).
-
--spec session_to_map(#session{}) -> map().
-session_to_map(S) ->
-  #{
-    <<"id">> => list_to_binary(S#session.id),
-    <<"caller">> => list_to_binary(S#session.caller),
-    <<"callee">> => list_to_binary(S#session.callee),
-    <<"timestamp">> => S#session.timestamp
-   }.
-
-%% read all signalling data as binary given session id
-%% all data in the list are the same order they are received
--spec session_to_signalling(string()) -> [binary()].
-session_to_signalling(SessinId) ->
-  P = list_to_binary(SessinId),
-  Prefix = <<P/binary,"_">>,   % all signalling start withs <<session_name>>_
-  sip_db:read_prefix(Prefix,1000).
-
+-spec map_to_session(map()) -> #session{}.
+map_to_session(M) ->
+  #{id := Id,caller := Caller,callee := Callee} = M,
+  #session{id = Id,caller=Caller,callee=Callee,
+	   timestamp = os:system_time(millisecond)}.
 
 -spec query_by_field(atom(),string(),integer(),integer()) -> [#session{}] | not_found.
 query_by_field(ByField,Value,TsStart,TsEnd) ->
   MatchHead = case ByField of
-		id -> #session{id='$1',timestamp='$2',_='_'};
-		caller -> #session{caller='$1',timestamp='$2',_='_'};
-		callee -> #session{callee='$1',timestamp='$2',_='_'}
-	      end,
+  		id -> #session{id='$1',timestamp='$2',_='_'};
+  		caller -> #session{caller='$1',timestamp='$2',_='_'};
+  		callee -> #session{callee='$1',timestamp='$2',_='_'}
+  	      end,
   MatchSpec =
     [
      {MatchHead,
@@ -157,88 +130,88 @@ query_by_field(ByField,Value,TsStart,TsEnd) ->
       ['$_']
      }
     ],
-  TR = mnesia:transaction(
-    fun() ->
-	mnesia:select(session,MatchSpec,read)
-    end
-	),
-  case TR of
-    {atomic,R} -> R;
-    _ -> not_found
-  end.
+  mnesia:dirty_select(session,MatchSpec).
 
 
 %% search the packet binary with
-%% cmd is "INVITE"
+%% request cmd name
 %% session id
 %% from with tag
 %% to without tag
-%% and return these info as list of tuple:
-%% {ok,[{id,Id},{caller,Caller},{callee,Callee}]} in form of record #session
-%% or return invalid if not a valid initial INVITE
+%% and return these info as map:
+%% {ok,{cmd => Cmd,id => Sid,caller => Caller,callee => Callee,origin=OriginPacket}}
+%% or return invalid if not a valid packet
 -spec analyze(binary()) -> analyze_result().
 analyze(Packet) ->
-  Lines = binary:split(Packet,<<"\r\n">>,[global]),
-  analyze_one(all,[],Lines).
-analyze_one(_,R,_) when length(R) == 3 ->
-  {ok,R};
-analyze_one(_,_,[]) -> invalid;
-analyze_one(_,_,[<<>> | _T]) ->  invalid;    % all headers are checked
-analyze_one(all,R,[H|T]) ->
-  case analyze_one(inspect_cmd,H) of
-    invalid -> invalid;
-    found -> analyze_one(only_header,R,T);
-    not_found ->
-      case analyze_one(inspect_header,H) of
-	invalid -> invalid;
-	not_found -> analyze_one(all,R,T);
-	{found,V} -> analyze_one(all,[V | R],T)
-      end
-  end;
-analyze_one(only_header,R,[H|T]) ->
-  case analyze_one(inspect_header,H) of
-    invalid -> invalid;
-    not_found -> analyze_one(only_header,R,T);
-    {found,V} -> analyze_one(only_header,[V | R],T)
+  case binary:split(Packet,<<"\r\n">>) of
+    [SessionLine , OriginPacket ] ->
+      case re:run(SessionLine,?RE_SESSION_ID,[{capture,[1],list}]) of
+	{match,[Sid]} ->
+	  Lines = binary:split(OriginPacket,<<"\r\n">>,[global]),
+	  analyze_header(#{id => Sid,origin => OriginPacket,cmd => "unknown"},Lines);
+	_ ->
+	  logger:error("invalid packet without session id, first line: ~p",[SessionLine]),
+	  invalid
+      end;
+    _ ->
+      logger:error("wrong packet format"),
+      invalid
   end.
 
-analyze_one(inspect_cmd,Line) ->
-  case re:run(Line,?RE_REQUEST_COMMAND,[{capture,[1],list}]) of
-    {match,[Key]} ->
-      case Key of
-	"INVITE" -> found;
-	_ -> invalid
-      end;
-    _ -> not_found
-  end;
-analyze_one(inspect_header,Line) ->
+analyze_header(_,[]) -> invalid;
+analyze_header(M,_) when map_size(M) == 5 -> {ok,M};
+analyze_header(_,[<<>> | _T]) -> invalid; % all headers checked, here comes empty '\r\n'
+analyze_header(#{cmd := "unknown"} = M,[Line|T])  ->
+  M1 = case re:run(Line,?RE_REQUEST_COMMAND,[{capture,[1],list}]) of
+	 {match,[Cmd]} ->
+	   M#{cmd := string:to_lower(Cmd)};
+	 _ -> analyze_header(M,Line)
+       end,
+  analyze_header(M1,T);
+analyze_header(M,[Line|T]) ->
+  M1 = analyze_header(M,Line),
+  analyze_header(M1,T);
+analyze_header(M,Line) ->
   case re:run(Line,?RE_REQUEST_HEADER,[{capture,[1,2],list}]) of
     {match,[Header,Value]} ->
       H = string:to_lower(Header),
       case H of
-	"session-id" ->
-	  {found,{id,Value}};
 	"from" ->
-	  case re:run(Line,?RE_HAS_TAG) of
-	    {match,_} ->
-	      case re:run(Line,?RE_EXTRACT_PHONE,[{capture,[1],list}]) of
-		{match,[Phone]} ->
-		  {found,{caller,Phone}};
-		_ -> invalid
-	      end;
-	    _ -> invalid   % "from" without tag
+	  case re:run(Value,?RE_EXTRACT_PHONE,[{capture,[1],list}]) of
+	    {match,[Phone]} ->
+	      M#{caller => Phone};
+	    _ -> M
 	  end;
 	"to" ->
-	  case re:run(Line,?RE_HAS_TAG) of
-	    {match,_} -> invalid;    % "to" already has tag, not first invite
-	    _ ->
-	      case re:run(Line,?RE_EXTRACT_PHONE,[{capture,[1],list}]) of
-		{match,[Phone]} ->
-		  {found,{callee,Phone}};
-		_ -> invalid
-	      end
+	  case re:run(Value,?RE_EXTRACT_PHONE,[{capture,[1],list}]) of
+	    {match,[Phone]} ->
+	      M#{callee => Phone};
+	    _ -> M
 	  end;
-	_ -> not_found
+	_ -> M
+      end;
+    _ -> M
+  end.
+
+
+
+%% expire timer schedules 'check_session' after session created
+handle_info({check_session,Sid,ExpireTs},State) ->
+  case ets:lookup(session_info,Sid) of
+    [{_,_,LastestTs}] ->
+      Diff = ExpireTs - LastestTs,
+      if
+	Diff < ?SESSION_EXPIRE_TIME -> 		% the session is active, extend the expiration timestamp
+	  do_expire_timer(Sid,2 * ?SESSION_EXPIRE_TIME,ExpireTs);
+	true ->
+	  logger:info("delete expired session ~p",[Sid]),
+	  ets:delete(session_info,Sid)
       end;
     _ -> not_found
-  end.
+  end,
+  {noreply,State};
+handle_info(_,State) ->
+  {noreply,State}.
+
+do_expire_timer(Sid,After,Now) ->
+  erlang:send_after(After,self(),{check_session,Sid,After + Now}).

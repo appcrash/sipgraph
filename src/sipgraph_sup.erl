@@ -40,21 +40,21 @@ init([]) ->
     },
 
     #{
-      id => sip_db,
-      start => {sip_db,start_link,[]},
-      restart => permanent,
-      shutdown => infinity,
-      type => worker,
-      modules => [sip_db]
-    },
-
-    #{
       id => sip_session,
       start => {sip_session,start_link,[]},
       restart => permanent,
       shutdown => infinity,
       type => worker,
       modules => [sip_session]
+    },
+
+    #{
+      id => sip_db,
+      start => {sip_db,start_link,[]},
+      restart => permanent,
+      shutdown => infinity,
+      type => worker,
+      modules => [sip_db]
     },
 
     #{
