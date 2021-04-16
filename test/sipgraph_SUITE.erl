@@ -22,5 +22,17 @@ init_per_testcase(_Case,Config) ->
 end_per_testcase(_Case,_Config) ->
   ok.
 
-packet_test(_Config) ->
+packet_test(Config) ->
+  P = test_path(Config,"invite.dtl"),
+  erlydtl:compile(P,invite),
+  {ok,D} = invite:render(#{sid => "hhh",from => "123", to =>"321"}),
+  ct:log("..~p",[list_to_binary(D)]),
   ok.
+
+test_path(Config,Filename) ->
+  DataDir = ?config(data_dir,Config),
+  filename:join([DataDir,Filename]).
+
+test_data(Config,Filename) ->
+  {ok,Data} = file:read_file(test_path(Config,Filename)),
+  Data.

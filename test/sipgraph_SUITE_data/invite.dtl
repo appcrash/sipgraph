@@ -1,0 +1,55 @@
+Session-Id: {{ sid }}
+INVITE sip:+{{ to }} SIP/2.0
+Via: SIP/2.0/UDP 10.1.1.132:5100;branch=z9hG4bK*6-9-16648-8291-12-913-0*R1kFK42UVVyxA799cahbhedbdb.6
+Record-Route: <sip:10.1.1.132:5100;lr;zte-did=6-9-16648-8291-12-913-0>
+Call-ID: z9hG4bK1ujnn9aac4ecu4u3jnfcfd56jv3cfdj5j
+From: <tel:{{ from }};noa=subscriber;tag=66w7au66
+To: <tel:{{ to }};
+Contact: <sip:10.1.1.117:5060;transport=udp;Dpt=ecaa-200>
+CSeq: 1 INVITE
+Allow: INVITE,UPDATE,BYE,PRACK,INFO,OPTIONS,CANCEL,SUBSCRIBE,ACK,REFER,NOTIFY,REGISTER,PUBLISH,MESSAGE
+Max-Forwards: 64
+Supported: timer,100rel,path,precondition,replaces
+Min-SE: 90
+P-Early-Media: supported
+Session-ID: 1122ffb7e9faefa7ab6623eff7c0c38a
+Content-Type: application/sdp
+Session-Expires: 1800
+Content-Length: 1089
+
+v=0
+o=- 1615373807 1615373807 IN IP4 10.1.1.78
+s=SBC call
+c=IN IP4 10.1.1.105
+t=0 0
+m=audio 17678 RTP/AVP 104 110 102 108 105 100 111 106 18 8 0
+b=AS:82
+b=RS:612
+b=RR:1837
+a=rtpmap:104 AMR-WB/16000
+a=fmtp:104 max-red=220;mode-change-capability=2
+a=rtpmap:110 AMR-WB/16000
+a=fmtp:110 octet-align=1;max-red=220;mode-change-capability=2
+a=rtpmap:102 AMR/8000
+a=fmtp:102 max-red=220;mode-change-capability=2
+a=rtpmap:108 AMR/8000
+a=fmtp:108 octet-align=1;max-red=220;mode-change-capability=2
+a=rtpmap:105 telephone-event/16000
+a=fmtp:105 0-15
+a=rtpmap:100 telephone-event/8000
+a=fmtp:100 0-15
+a=ptime:20
+a=maxptime:240
+a=sendrecv
+a=des:qos mandatory local sendrecv
+a=curr:qos local none
+a=des:qos optional remote sendrecv
+a=curr:qos remote none
+a=rtpmap:111 EVS/16000
+a=fmtp:111 br=9.6-64;bw=swb;mode-change-capability=2;cmr=0;dtx=0;ch-aw-recv=-1;max-red=0
+a=rtpmap:106 EVS/16000
+a=fmtp:106 br=5.9-64;bw=wb;mode-change-capability=2;cmr=0;dtx=0;ch-aw-recv=-1;max-red=0
+a=rtpmap:18 G729/8000
+a=fmtp:18 annexb=no
+a=rtpmap:8 PCMA/8000
+a=rtpmap:0 PCMU/8000
