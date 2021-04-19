@@ -29,6 +29,14 @@ init(State) ->
   %% session_info table, record:
   %% {session_id :: string(), seq :: integer(), lastest_timestamp :: integer()}
   ets:new(session_info,[named_table,set]),
+
+  ets:new(session_regex,[named_table,set]),
+  lists:foreach(
+    fun({Name,Pattern}) ->
+	{ok,MP} = re:compile(Pattern),
+	ets:insert(session_regex,{Name,MP})
+    end,[{command,?RE_REQUEST_COMMAND},{header,?RE_REQUEST_HEADER},
+	 {phone,?RE_EXTRACT_PHONE},{session_id,?RE_SESSION_ID}]),
   {ok,State}.
 
 start_link() ->
@@ -147,7 +155,8 @@ query_by_field(ByField,Value,TsStart,TsEnd) ->
 analyze(Packet) ->
   case binary:split(Packet,<<"\r\n">>) of
     [SessionLine , OriginPacket ] ->
-      case re:run(SessionLine,?RE_SESSION_ID,[{capture,[1],list}]) of
+      [{_,MP}] = ets:lookup(session_regex,session_id),
+      case re:run(SessionLine,MP,[{capture,[1],list}]) of
 	{match,[Sid]} ->
 	  Lines = binary:split(OriginPacket,<<"\r\n">>,[global]),
 	  analyze_header(#{id => Sid,origin => OriginPacket,cmd => "unknown"},Lines);
@@ -164,7 +173,8 @@ analyze_header(_,[]) -> invalid;
 analyze_header(M,_) when map_size(M) == 5 -> {ok,M};
 analyze_header(_,[<<>> | _T]) -> invalid; % all headers checked, here comes empty '\r\n'
 analyze_header(#{cmd := "unknown"} = M,[Line|T])  ->
-  M1 = case re:run(Line,?RE_REQUEST_COMMAND,[{capture,[1],list}]) of
+  [{_,MP}] = ets:lookup(session_regex,command),
+  M1 = case re:run(Line,MP,[{capture,[1],list}]) of
 	 {match,[Cmd]} ->
 	   M#{cmd := string:to_lower(Cmd)};
 	 _ -> analyze_header(M,Line)
@@ -174,18 +184,20 @@ analyze_header(M,[Line|T]) ->
   M1 = analyze_header(M,Line),
   analyze_header(M1,T);
 analyze_header(M,Line) ->
-  case re:run(Line,?RE_REQUEST_HEADER,[{capture,[1,2],list}]) of
+  [{_,MP}] = ets:lookup(session_regex,header),
+  case re:run(Line,MP,[{capture,[1,2],list}]) of
     {match,[Header,Value]} ->
       H = string:to_lower(Header),
+      [{_,PMP}] = ets:lookup(session_regex,phone),
       case H of
 	"from" ->
-	  case re:run(Value,?RE_EXTRACT_PHONE,[{capture,[1],list}]) of
+	  case re:run(Value,PMP,[{capture,[1],list}]) of
 	    {match,[Phone]} ->
 	      M#{caller => Phone};
 	    _ -> M
 	  end;
 	"to" ->
-	  case re:run(Value,?RE_EXTRACT_PHONE,[{capture,[1],list}]) of
+	  case re:run(Value,PMP,[{capture,[1],list}]) of
 	    {match,[Phone]} ->
 	      M#{callee => Phone};
 	    _ -> M
