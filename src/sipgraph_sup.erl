@@ -67,11 +67,11 @@ init([]) ->
     },
 
     #{
-      id => receiver,
-      start => {receiver,start_link,[]},
+      id => receiver_sup,
+      start => {receiver_sup,start_link,[]},
       restart => permanent,
       shutdown => infinity,
-      type => worker,
+      type => supervisor,
       modules => [receiver]
      }
 
