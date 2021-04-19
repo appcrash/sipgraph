@@ -13,7 +13,7 @@
 %% also provide query function: by session_id | caller num | callee num
 
 
-% cmd pattern, example: INVITE sip:+8617871233155@hb.ims.mnc000.mcc460.3gppnetwork.org SIP/2.0
+% cmd pattern, example: INVITE sip:+123456789@hb.ims.3gppnetwork.org SIP/2.0
 -define(RE_REQUEST_COMMAND,"(?i)^([\\w]+)\\s+.+\\s+SIP\/2\.0\\s*$").
 % pattern: Header: Value
 -define(RE_REQUEST_HEADER,"^([-\\w]+)\:\s*(.*)$").
@@ -44,6 +44,7 @@ handle_call(Request,_From,State) ->
   {reply,Request,State}.
 
 handle_cast({packet,Packet},State) ->
+  metric:count(packet_received),
   case analyze(Packet) of
     {ok,M} ->
       #{id := Sid,cmd := Cmd,origin := OriginPacket} = M,
@@ -56,7 +57,8 @@ handle_cast({packet,Packet},State) ->
 	      logger:info("record session: ~p",[Sid]),
 	      SR = map_to_session(M),
 	      mnesia:dirty_write(SR),
-	      sip_db:store(Sid,1,OriginPacket);
+	      sip_db:store(Sid,1,OriginPacket),
+	      metric:count(session_created);
 	    _ ->
 	      logger:error("first packet of session(~p) with cmd ~p",[Sid,Cmd])
 	  end

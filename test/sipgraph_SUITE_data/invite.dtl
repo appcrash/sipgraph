@@ -3,8 +3,8 @@ INVITE sip:+{{ to }} SIP/2.0
 Via: SIP/2.0/UDP 10.1.1.132:5100;branch=z9hG4bK*6-9-16648-8291-12-913-0*R1kFK42UVVyxA799cahbhedbdb.6
 Record-Route: <sip:10.1.1.132:5100;lr;zte-did=6-9-16648-8291-12-913-0>
 Call-ID: z9hG4bK1ujnn9aac4ecu4u3jnfcfd56jv3cfdj5j
-From: <tel:{{ from }};noa=subscriber;tag=66w7au66
-To: <tel:{{ to }};
+From: <tel:{{ from }}>;noa=subscriber;tag=66w7au66
+To: <tel:{{ to }}>;
 Contact: <sip:10.1.1.117:5060;transport=udp;Dpt=ecaa-200>
 CSeq: 1 INVITE
 Allow: INVITE,UPDATE,BYE,PRACK,INFO,OPTIONS,CANCEL,SUBSCRIBE,ACK,REFER,NOTIFY,REGISTER,PUBLISH,MESSAGE

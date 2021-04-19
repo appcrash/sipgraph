@@ -7,7 +7,8 @@
 init(State) ->
   Dispatch = cowboy_router:compile([
     {'_',[
-      {"/sip/:operation",web_handler,[]}
+      {"/sip/:operation",web_sip_handler,[]},
+      {"/metric",web_metric_handler,[]}
     ]}
   ]),
   {_,Ip} = application:get_env(http_ip),

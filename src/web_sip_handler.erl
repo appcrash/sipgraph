@@ -1,4 +1,4 @@
--module(web_handler).
+-module(web_sip_handler).
 -export([init/2]).
 
 -include("common.hrl").
