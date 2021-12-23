@@ -44,7 +44,7 @@ init_mnesia() ->
       {rocksdb_copies,Nodes}
     ]),
 
-    mnesia:wait_for_tables([session,signal],5000),
+    mnesia:wait_for_tables([session,signal],10000),
     ok
   catch
     error:Reason ->

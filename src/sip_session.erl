@@ -56,16 +56,23 @@ handle_cast({packet,Packet},State) ->
   case analyze(Packet) of
     {ok,M} ->
       #{id := Sid,cmd := Cmd,origin := OriginPacket} = M,
+      Ts = os:system_time(millisecond),
       case update_session_info(Sid) of
 	{exist,Seq} ->
-	  sip_db:store(Sid,Seq,OriginPacket);
+	  mnesia:transaction(
+	    fun() ->
+		sip_db:store(Sid,Seq,OriginPacket,Ts)
+	    end);
 	new_session ->
 	  case Cmd of
 	    "invite" ->
 	      logger:info("record session: ~p",[Sid]),
-	      SR = map_to_session(M),
-	      mnesia:dirty_write(SR),
-	      sip_db:store(Sid,1,OriginPacket),
+	      SR = map_to_session(M,Ts),
+	      mnesia:transaction(
+		fun() ->
+		    mnesia:write(SR),
+		    sip_db:store(Sid,1,OriginPacket,Ts)
+		end),
 	      metric:count(session_created);
 	    _ ->
 	      logger:error("first packet of session(~p) with cmd ~p",[Sid,Cmd])
@@ -110,11 +117,11 @@ query(Field,Value,TsStart,TsEnd) ->
 
 %% #################### API #############################
 
--spec map_to_session(map()) -> #session{}.
-map_to_session(M) ->
+-spec map_to_session(map(),integer()) -> #session{}.
+map_to_session(M,Ts) ->
   #{id := Id,caller := Caller,callee := Callee} = M,
   #session{id = Id,caller=Caller,callee=Callee,
-	   timestamp = os:system_time(millisecond)}.
+	   timestamp = Ts}.
 
 -spec query_by_field(atom(),string(),integer(),integer()) -> [#session{}] | not_found.
 query_by_field(ByField,Value,TsStart,TsEnd) ->
@@ -140,7 +147,14 @@ query_by_field(ByField,Value,TsStart,TsEnd) ->
       ['$_']
      }
     ],
-  mnesia:dirty_select(session,MatchSpec).
+  case mnesia:transaction(
+	 fun() ->
+	     mnesia:select(session,MatchSpec)
+	 end) of
+    {atomic,Res} -> Res;
+    _ -> not_found
+  end.
+
 
 
 %% search the packet binary with
