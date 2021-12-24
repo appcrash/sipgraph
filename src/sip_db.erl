@@ -2,7 +2,7 @@
 
 -behaviour(gen_server).
 -export([init/1,handle_call/3,handle_cast/2,start_link/0]).
--export([store/4,read_prefix/2]).
+-export([store/4,read_prefix/3]).
 
 -include("common.hrl").
 -include_lib("stdlib/include/ms_transform.hrl").
@@ -55,8 +55,8 @@ store(SessionId,Seq,Packet,Ts) ->
 		   timestamp = Ts,data = Packet},
   mnesia:write(Record).
 
--spec read_prefix(string(),integer()) -> [#signal{}].
-read_prefix(Key,Size) ->
-  gen_server:call(?MODULE,{read_prefix,{Key,Size}}).
+-spec read_prefix(string(),integer(),integer()) -> [#signal{}].
+read_prefix(Key,Size,Timeout) ->
+  gen_server:call(?MODULE,{read_prefix,{Key,Size}},Timeout).
 
 %% ################   API   ##################

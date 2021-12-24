@@ -29,7 +29,6 @@ init(State) ->
   %% session_info table, record:
   %% {session_id :: string(), seq :: integer(), lastest_timestamp :: integer()}
   ets:new(session_info,[named_table,set]),
-
   ets:new(session_regex,[named_table,set]),
   lists:foreach(
     fun({Name,Pattern}) ->

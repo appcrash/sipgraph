@@ -14,8 +14,10 @@ init(State) ->
   {_,Ip} = application:get_env(http_ip),
   {ok,Addr} = inet:parse_ipv4_address(Ip),
   {_,Port} = application:get_env(http_port),
+  {_,Timeout} = application:get_env(http_timeout),
   case cowboy:start_clear(http,[{ip,Addr},{port,Port}],#{
-  env => #{dispatch => Dispatch}}) of
+  env => #{dispatch => Dispatch},
+  request_timeout => Timeout}) of
     {ok,_} ->
       {ok,State};
     {error,Reason} -> {error,Reason}

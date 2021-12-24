@@ -25,6 +25,7 @@ sip_error(ErrNum,Req) ->
   cowboy_req:reply(ErrNum,Req).
 
 sip_get_session_by_field(Req,Opts,Field) ->
+  {ok,Timeout} = application:get_env(sipgraph,http_timeout),
   try
     M = cowboy_req:match_qs([{id,nonempty},{ts_start,int,0},{ts_end,int,0}],Req),
     MM = check_timestamp(M),
@@ -32,7 +33,7 @@ sip_get_session_by_field(Req,Opts,Field) ->
     SessionList = sip_session:query(Field,binary_to_list(Id),Start,End),
     SM = lists:map(
 	   fun(#session{id=Sid}=S) ->
-	       SignalList = sip_db:read_prefix(Sid,1000),
+	       SignalList = sip_db:read_prefix(Sid,1000,Timeout),
 	       #{
 		 <<"session">> => session_to_map(S),
 		 <<"signal">> => [signal_to_map(Sig) || Sig <- SignalList]
