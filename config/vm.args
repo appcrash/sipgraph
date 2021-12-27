@@ -1,8 +1,0 @@
--sname sipgraph
-
--setcookie sipgraph_cookie
-
-+P 1048576
-+Q 1048576 
-+K true
-+A30

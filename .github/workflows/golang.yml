@@ -9,18 +9,15 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        os: [7,8]
-    container: appcrash/centos-erlang:${{ matrix.os }}
+    container: centos/devtoolset-7-toolchain-centos7
     steps:
     - uses: actions/checkout@v2
+    - uses: actions/setup-go@v2
+      with:
+        go-version: '1.16.6'
 
-    - name: Package
-      run: rebar3 as prod tar
-    
     - name: Upload artifacts
       uses: actions/upload-artifact@v2
       with:
-        name: sipgraph-centos${{ matrix.os }} 
+        name: sipgraph-centos7
         path: _build/prod/rel/sipgraph/*.tar.gz
