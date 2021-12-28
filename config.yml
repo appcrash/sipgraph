@@ -1,0 +1,2 @@
+udp_address: 127.0.0.1:12000
+database_dir: db/

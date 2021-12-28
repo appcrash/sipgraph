@@ -9,17 +9,18 @@ type UdpServer struct {
 	ctx        context.Context
 	cancelFunc context.CancelFunc
 	addr       *net.UDPAddr
+	dbDir      string
 }
 
-func NewUdpServer(addr string) *UdpServer {
+func NewUdpServer(addr, dbDir string) *UdpServer {
 	s := &UdpServer{}
 	if udpAddr, err := net.ResolveUDPAddr("udp", addr); err != nil {
 		panic("invalid udp address")
 	} else {
 		s.addr = udpAddr
+		s.dbDir = dbDir
 	}
 	s.ctx, s.cancelFunc = context.WithCancel(context.Background())
-
 	return s
 }
 
@@ -28,7 +29,7 @@ func (s *UdpServer) Start() (err error) {
 	if conn, err = net.ListenUDP("udp", s.addr); err != nil {
 		return
 	}
-	ch := make(chan []byte, 1024)
+	ch := make(chan []byte, 4096)
 
 	// receive loop
 	go func() {
@@ -54,7 +55,7 @@ func (s *UdpServer) Start() (err error) {
 
 	// analyze loop
 	go func() {
-		a := NewAnalyzer()
+		a := NewAnalyzer(s.dbDir)
 		for {
 			select {
 			case buffer := <-ch:

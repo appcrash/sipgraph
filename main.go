@@ -4,10 +4,12 @@ import (
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
+	"os"
 )
 
 type appConfig struct {
-	port int `yaml:"port"`
+	udpAddress  int    `yaml:"udp_address"`
+	databaseDir string `yaml:"database_dir"`
 }
 
 var logger *logrus.Logger
@@ -17,14 +19,13 @@ func initLogger() {
 }
 
 func main() {
-	data,err := ioutil.ReadFile("config.yml")
+	cfgFile := os.Args[1]
+	data, err := ioutil.ReadFile(cfgFile)
 	if err != nil {
 		panic("config file not found")
 	}
 	var cfg appConfig
-	yaml.Unmarshal(data,&cfg)
+	yaml.Unmarshal(data, &cfg)
 
 	initLogger()
 }
-
-
