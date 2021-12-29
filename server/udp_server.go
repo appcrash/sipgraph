@@ -1,4 +1,4 @@
-package sipgraph
+package server
 
 import (
 	"context"
@@ -9,16 +9,16 @@ type UdpServer struct {
 	ctx        context.Context
 	cancelFunc context.CancelFunc
 	addr       *net.UDPAddr
-	dbDir      string
+	db         DBOperation
 }
 
-func NewUdpServer(addr, dbDir string) *UdpServer {
+func NewUdpServer(addr string, db DBOperation) *UdpServer {
 	s := &UdpServer{}
 	if udpAddr, err := net.ResolveUDPAddr("udp", addr); err != nil {
 		panic("invalid udp address")
 	} else {
 		s.addr = udpAddr
-		s.dbDir = dbDir
+		s.db = db
 	}
 	s.ctx, s.cancelFunc = context.WithCancel(context.Background())
 	return s
@@ -29,19 +29,21 @@ func (s *UdpServer) Start() (err error) {
 	if conn, err = net.ListenUDP("udp", s.addr); err != nil {
 		return
 	}
-	ch := make(chan []byte, 4096)
+	ch := make(chan []byte, 10240)
 
 	// receive loop
 	go func() {
-		buffer := make([]byte, 4096)
+		logger.Infof("udp starting at %v", s.addr)
+		defer logger.Infoln("udp server receive loop done")
+		buffer := make([]byte, 8192)
 		for {
-			_, _, e := conn.ReadFromUDP(buffer)
+			n, _, e := conn.ReadFromUDP(buffer)
 			if e != nil {
 				logger.Errorf("read from udp error: %v", e)
 				continue
 			}
 			select {
-			case ch <- buffer:
+			case ch <- buffer[:n]:
 			default:
 			}
 			select {
@@ -51,17 +53,19 @@ func (s *UdpServer) Start() (err error) {
 			default:
 			}
 		}
+
 	}()
 
 	// analyze loop
 	go func() {
-		a := NewAnalyzer(s.dbDir)
+		a := NewAnalyzer(s.db)
+		logger.Infoln("analyzing loop starting")
+		defer logger.Infoln("analyzing loop done")
 		for {
 			select {
 			case buffer := <-ch:
 				a.analyze(buffer)
 			case <-s.ctx.Done():
-				logger.Infof("analyze loop done")
 				return
 			}
 		}

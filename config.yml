@@ -1,2 +1,3 @@
 udp_address: 127.0.0.1:12000
+http_address: 127.0.0.1:7000
 database_dir: db/

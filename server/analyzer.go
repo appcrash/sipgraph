@@ -1,4 +1,4 @@
-package sipgraph
+package server
 
 import (
 	"bytes"
@@ -8,17 +8,17 @@ import (
 )
 
 type sessionInfo struct {
-	id              string
-	cmd             string
-	caller          string
-	callee          string
-	createTimestamp int64
+	Id              string `json:"session_id"`
+	Cmd             string `json:"-"`
+	Caller          string `json:"caller"`
+	Callee          string `json:"callee"`
+	CreateTimestamp int64  `json:"timestamp"`
 }
 
 type packetInfo struct {
-	packet          []byte
-	createTimestamp int64
-	seq             int
+	Packet          string `json:"packet"`
+	CreateTimestamp int64  `json:"timestamp"`
+	Seq             int    `json:"seq"`
 }
 
 type sessionState struct {
@@ -49,24 +49,21 @@ const (
 )
 
 var (
-	// cmd pattern, example: INVITE sip:+123456789@hb.ims.3gppnetwork.org SIP/2.0
+	// Cmd pattern, example: INVITE sip:+123456789@hb.ims.3gppnetwork.org SIP/2.0
 	regCmd = regexp.MustCompile(`^([\w]+)\s+.+\s+[sS][iI][pP]/2\.0\s*$`)
 
 	// pattern: Header: Value
 	regHeader = regexp.MustCompile(`^([-\w]+)\:\s*(.*)$`)
 
-	// extract caller/callee info from  From/To value
+	// extract Caller/Callee info from  From/To value
 	regPhone = regexp.MustCompile(`[^<]*<\s*(?:[tT][eE][lL]|[sS][iI][pP]):\+?(?:86)?(\d+).*`)
 
-	// extract session-id line in the first place
-	regSession = regexp.MustCompile(`(?i)^session-id:\s*(\S+)\s*$`)
+	// extract Session-Id line in the first place
+	regSession = regexp.MustCompile(`(?i)^Session-Id:\s*(\S+)\s*$`)
 )
 
-func NewAnalyzer(dbDir string) *analyzer {
-	db := &ldb{}
-	if err := db.Init(dbDir); err != nil {
-		panic(err)
-	}
+func NewAnalyzer(db DBOperation) *analyzer {
+
 	a := &analyzer{
 		stateMap: make(map[string]*sessionState),
 		packetC:  make(chan []byte, 8),
@@ -102,32 +99,32 @@ func (a *analyzer) analyzePacket(packet []byte) {
 	}
 	lines := bytes.Split(packet, []byte{'\r', '\n'})
 	if len(lines) <= 4 {
-		// not enough info, or bad packet
+		// not enough info, or bad Packet
 		return
 	}
 	var si sessionInfo
 	var counter int
 	sessionLine := lines[0]
 	if matches := regSession.FindSubmatch(sessionLine); matches == nil {
-		logger.Errorf("invalid packet without session id line")
+		logger.Errorf("invalid Packet without Session Id line")
 		return
 	} else {
-		si.id = string(matches[1])
+		si.Id = string(matches[1])
 	}
 	now := getNow()
-	si.createTimestamp = now
+	si.CreateTimestamp = now
 	for _, line := range lines[1:] {
 		if cmd := regCmd.FindSubmatch(line); cmd != nil {
-			si.cmd = strings.ToLower(string(cmd[1]))
+			si.Cmd = strings.ToLower(string(cmd[1]))
 			counter++
 		} else if header := regHeader.FindSubmatch(line); header != nil {
 			h, v := header[1], header[2]
 			switch strings.ToLower(string(h)) {
 			case "from":
-				si.caller = string(v)
+				si.Caller = string(v)
 				counter++
 			case "to":
-				si.callee = string(v)
+				si.Callee = string(v)
 				counter++
 			}
 		}
@@ -136,19 +133,19 @@ func (a *analyzer) analyzePacket(packet []byte) {
 			// got enough info
 			var state *sessionState
 			var ok bool
-			state, ok = a.stateMap[si.id]
-			if si.cmd == "invite" && !ok {
+			state, ok = a.stateMap[si.Id]
+			if si.Cmd == "invite" && !ok {
 				// this is first INVITE other than re-INVITE
-				logger.Infof("store new session: %v", si.id)
+				logger.Infof("store new Session: %v", si.Id)
 				state = &sessionState{
 					createInfo: &si,
 					nextSeq:    0,
 				}
-				a.stateMap[si.id] = state
+				a.stateMap[si.Id] = state
 				a.db.StoreNewSession(&si)
 			}
 			if state == nil {
-				logger.Errorf("wrong session state for session id:%v", si.id)
+				logger.Errorf("wrong Session state for Session Id:%v", si.Id)
 				return
 			}
 			state.updateTimeStamp = now
@@ -160,7 +157,7 @@ func (a *analyzer) analyzePacket(packet []byte) {
 		}
 	}
 
-	logger.Errorf("invalid packet without enough info:\n%v\n", packet)
+	logger.Errorf("invalid Packet without enough info:\n%v\n", packet)
 }
 
 func (a *analyzer) removeExpiredSession() {
@@ -174,7 +171,7 @@ func (a *analyzer) removeExpiredSession() {
 		}
 	}
 	for _, sessionId := range toRemove {
-		logger.Infof("remove expired session: %v", sessionId)
+		logger.Infof("remove expired Session: %v", sessionId)
 		delete(a.stateMap, sessionId)
 	}
 

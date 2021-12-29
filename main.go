@@ -1,31 +1,37 @@
-package sipgraph
+package main
 
 import (
-	"github.com/sirupsen/logrus"
-	"gopkg.in/yaml.v2"
+	"flag"
+	"github.com/appcrash/sipgraph/server"
 	"io/ioutil"
-	"os"
+	"net"
+	"time"
 )
 
-type appConfig struct {
-	udpAddress  int    `yaml:"udp_address"`
-	databaseDir string `yaml:"database_dir"`
-}
+var (
+	configFile string
+)
 
-var logger *logrus.Logger
-
-func initLogger() {
-	logger = logrus.New()
+func init() {
+	flag.StringVar(&configFile, "c", "config.yml", "path to config file")
 }
 
 func main() {
-	cfgFile := os.Args[1]
-	data, err := ioutil.ReadFile(cfgFile)
+	flag.Parse()
+	cfg := server.InitConfig(configFile)
+	db := server.InitDB(cfg.DatabaseDir)
+	udpServer := server.NewUdpServer(cfg.UdpAddress, db)
+	err := udpServer.Start()
 	if err != nil {
-		panic("config file not found")
+		panic(err)
 	}
-	var cfg appConfig
-	yaml.Unmarshal(data, &cfg)
 
-	initLogger()
+	go func() {
+		sig, _ := ioutil.ReadFile("/home/yh/develop/sipgraph/invite.dtl")
+		<-time.After(1 * time.Second)
+		conn, _ := net.Dial("udp", cfg.UdpAddress)
+		conn.Write(sig)
+	}()
+	httpApi := server.NewHttpApi(cfg.HttpAddress, db)
+	httpApi.Serve()
 }
