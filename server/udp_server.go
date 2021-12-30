@@ -12,6 +12,8 @@ type UdpServer struct {
 	db         DBOperation
 }
 
+const maxUdpPacket = 64 * 1024
+
 func NewUdpServer(addr string, db DBOperation) *UdpServer {
 	s := &UdpServer{}
 	if udpAddr, err := net.ResolveUDPAddr("udp", addr); err != nil {
@@ -35,15 +37,25 @@ func (s *UdpServer) Start() (err error) {
 	go func() {
 		logger.Infof("udp starting at %v", s.addr)
 		defer logger.Infoln("udp server receive loop done")
-		buffer := make([]byte, 8192)
+		buffer := make([]byte, maxUdpPacket)
 		for {
 			n, _, e := conn.ReadFromUDP(buffer)
 			if e != nil {
 				logger.Errorf("read from udp error: %v", e)
 				continue
 			}
+			switch n {
+			case maxUdpPacket:
+				logger.Errorf("received large and unusual packet, skip it")
+				fallthrough
+			case 0:
+				continue
+			}
+
+			bufferCopy := make([]byte, n)
+			copy(bufferCopy, buffer[:n])
 			select {
-			case ch <- buffer[:n]:
+			case ch <- bufferCopy:
 			default:
 			}
 			select {
