@@ -121,10 +121,20 @@ func (a *analyzer) analyzePacket(packet []byte) {
 			h, v := header[1], header[2]
 			switch strings.ToLower(string(h)) {
 			case "from":
-				si.Caller = string(v)
+				cm := regPhone.FindSubmatch(v)
+				if cm == nil {
+					logger.Errorf("invalid from header value: %v", v)
+					return
+				}
+				si.Caller = string(cm[1])
 				counter++
 			case "to":
-				si.Callee = string(v)
+				cm := regPhone.FindSubmatch(v)
+				if cm == nil {
+					logger.Errorf("invalid to header value: %v", v)
+					return
+				}
+				si.Callee = string(cm[1])
 				counter++
 			}
 		}

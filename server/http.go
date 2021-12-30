@@ -2,7 +2,6 @@ package server
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strconv"
 )
@@ -28,13 +27,8 @@ func (h *HttpApi) Serve() {
 	http.ListenAndServe(h.addr, nil)
 }
 
-func (h *HttpApi) getSessionData(id string) (sd sessionData, err error) {
-	si := h.db.GetSessionById(id)
-	if si == nil {
-		err = fmt.Errorf("Session not exist")
-		return
-	}
-	packets := h.db.GetAllPacket(id)
+func (h *HttpApi) toSessionData(si *sessionInfo) (sd sessionData) {
+	packets := h.db.GetAllPacket(si.Id)
 	sd.Session = si
 	sd.Signal = packets
 	return
@@ -45,14 +39,17 @@ func (h *HttpApi) queryBySessionId(w http.ResponseWriter, r *http.Request) {
 		sid := id[0]
 		var sd sessionData
 		var data = []byte("[]")
-		var mdata []byte
+		var jsonData []byte
 		var err error
-		if sd, err = h.getSessionData(sid); err != nil {
-			goto done
 
+		si := h.db.GetSessionById(sid)
+		if si == nil {
+			logger.Errorf("session %v not exist", sid)
+			goto done
 		}
-		if mdata, err = json.Marshal([]*sessionData{&sd}); err == nil {
-			data = mdata
+		sd = h.toSessionData(si)
+		if jsonData, err = json.Marshal([]*sessionData{&sd}); err == nil {
+			data = jsonData
 		}
 	done:
 		w.Header().Set("Content-Type", "application/json,charset=utf-8")
@@ -64,17 +61,19 @@ func (h *HttpApi) queryBySessionId(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HttpApi) queryByCaller(w http.ResponseWriter, r *http.Request) {
-
+	h.queryByIndex(w, r, "caller")
 }
 
 func (h *HttpApi) queryByCallee(w http.ResponseWriter, r *http.Request) {
-
+	h.queryByIndex(w, r, "callee")
 }
 
 func (h *HttpApi) queryByIndex(w http.ResponseWriter, r *http.Request, field string) {
 	var id, startStr, endStr []string
+	var jsonData []byte
 	var tsStart, tsEnd int64
-	var si []*sessionInfo
+	var sis []*sessionInfo
+	var sds []*sessionData
 	var ok bool
 	var err error
 	if id, ok = r.URL.Query()["id"]; !ok || len(id) != 1 {
@@ -96,11 +95,29 @@ func (h *HttpApi) queryByIndex(w http.ResponseWriter, r *http.Request, field str
 	}
 	switch field {
 	case "caller":
-		si = h.db.GetSessionByCaller(id[0], tsStart, tsEnd)
+		sis = h.db.GetSessionByCaller(id[0], tsStart, tsEnd)
 	case "callee":
-		si = h.db.GetSessionByCallee(id[0], tsStart, tsEnd)
+		sis = h.db.GetSessionByCallee(id[0], tsStart, tsEnd)
 	}
 
+	w.Header().Set("Content-Type", "application/json,charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+
+	if sis != nil {
+		for _, si := range sis {
+			sd := h.toSessionData(si)
+			sds = append(sds, &sd)
+		}
+		if jsonData, err = json.Marshal(sds); err != nil {
+			w.Write([]byte("[]"))
+		} else {
+			w.Write(jsonData)
+		}
+		return
+	}
+
+	w.Write([]byte("[]"))
+	return
 badRequest:
 	w.WriteHeader(http.StatusBadRequest)
 }

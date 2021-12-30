@@ -3,9 +3,6 @@ package main
 import (
 	"flag"
 	"github.com/appcrash/sipgraph/server"
-	"io/ioutil"
-	"net"
-	"time"
 )
 
 var (
@@ -25,13 +22,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
-	go func() {
-		sig, _ := ioutil.ReadFile("/home/yh/develop/sipgraph/invite.dtl")
-		<-time.After(1 * time.Second)
-		conn, _ := net.Dial("udp", cfg.UdpAddress)
-		conn.Write(sig)
-	}()
 	httpApi := server.NewHttpApi(cfg.HttpAddress, db)
 	httpApi.Serve()
 }

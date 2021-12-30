@@ -41,43 +41,6 @@ func (l *ldb) Init(dbDir string) (err error) {
 	if _, e := os.Stat(dbDir); os.IsNotExist(e) {
 		os.MkdirAll(dbDir, 0755)
 	}
-	//o := &opt.Options{
-	//	AltFilters:                            nil,
-	//	BlockCacher:                           nil,
-	//	BlockCacheCapacity:                    0,
-	//	BlockCacheEvictRemoved:                false,
-	//	BlockRestartInterval:                  0,
-	//	BlockSize:                             0,
-	//	CompactionExpandLimitFactor:           0,
-	//	CompactionGPOverlapsFactor:            0,
-	//	CompactionL0Trigger:                   0,
-	//	CompactionSourceLimitFactor:           0,
-	//	CompactionTableSize:                   0,
-	//	CompactionTableSizeMultiplier:         0,
-	//	CompactionTableSizeMultiplierPerLevel: nil,
-	//	CompactionTotalSize:                   0,
-	//	CompactionTotalSizeMultiplier:         0,
-	//	CompactionTotalSizeMultiplierPerLevel: nil,
-	//	Comparer:                              nil,
-	//	Compression:                           0,
-	//	DisableBufferPool:                     false,
-	//	DisableBlockCache:                     false,
-	//	DisableCompactionBackoff:              false,
-	//	DisableLargeBatchTransaction:          false,
-	//	ErrorIfExist:                          false,
-	//	ErrorIfMissing:                        false,
-	//	Filter:                                nil,
-	//	IteratorSamplingRate:                  0,
-	//	NoSync:                                false,
-	//	NoWriteMerge:                          false,
-	//	OpenFilesCacher:                       nil,
-	//	OpenFilesCacheCapacity:                0,
-	//	ReadOnly:                              false,
-	//	Strict:                                0,
-	//	WriteBuffer:                           0,
-	//	WriteL0PauseTrigger:                   0,
-	//	WriteL0SlowdownTrigger:                0,
-	//}
 	if l.sessionDB, err = leveldb.OpenFile(dbDir+"Session.db", nil); err != nil {
 		return
 	}
@@ -163,7 +126,6 @@ func (l *ldb) GetAllPacket(sessionId string) (packets []*packetInfo) {
 			} else {
 				seq, _ = strconv.Atoi(string(matches[2]))
 				ts, _ = strconv.ParseInt(string(matches[3]), 10, 64)
-				logger.Infof("len is %v\n", len(value))
 				pkt := &packetInfo{
 					Packet:          string(value[:]),
 					CreateTimestamp: ts,
