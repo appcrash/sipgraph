@@ -140,31 +140,35 @@ func (a *analyzer) analyzePacket(packet []byte) {
 		}
 
 		if counter == 3 {
-			// got enough info
-			var state *sessionState
-			var ok bool
-			state, ok = a.stateMap[si.Id]
-			if si.Cmd == "invite" && !ok {
-				// this is first INVITE other than re-INVITE
-				logger.Infof("store new Session: %v", si.Id)
-				state = &sessionState{
-					createInfo: &si,
-					nextSeq:    0,
-				}
-				a.stateMap[si.Id] = state
-				a.db.StoreNewSession(&si)
+			break
+		}
+	}
+
+	if si.Id != "" {
+		// got enough info
+		var state *sessionState
+		var ok bool
+		state, ok = a.stateMap[si.Id]
+		if si.Cmd == "invite" && !ok && counter == 3 {
+			// this is first INVITE other than re-INVITE
+			logger.Infof("store new Session: %v", si.Id)
+			state = &sessionState{
+				createInfo: &si,
+				nextSeq:    0,
 			}
-			if state == nil {
-				logger.Errorf("wrong Session state for Session Id:%v", si.Id)
-				return
-			}
-			state.updateTimeStamp = now
-			firstLineSize := len(sessionLine) + 2 // extra \r\n
-			originPacket := packet[firstLineSize:]
-			a.db.StorePacket(state, originPacket)
-			state.nextSeq++
+			a.stateMap[si.Id] = state
+			a.db.StoreNewSession(&si)
+		}
+		if state == nil {
+			logger.Errorf("wrong Session state for Session Id:%v", si.Id)
 			return
 		}
+		state.updateTimeStamp = now
+		firstLineSize := len(sessionLine) + 2 // extra \r\n
+		originPacket := packet[firstLineSize:]
+		a.db.StorePacket(state, originPacket)
+		state.nextSeq++
+		return
 	}
 
 	logger.Errorf("invalid Packet without enough info:\n%v\n", string(packet))

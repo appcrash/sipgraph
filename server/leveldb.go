@@ -75,7 +75,7 @@ func (l *ldb) StoreNewSession(si *sessionInfo) {
 }
 
 func (l *ldb) StorePacket(st *sessionState, packet []byte) {
-	packetKey := []byte(fmt.Sprintf("%s_%d_%d", st.createInfo.Id, st.nextSeq, st.updateTimeStamp))
+	packetKey := []byte(fmt.Sprintf("%s_%06d_%d", st.createInfo.Id, st.nextSeq, st.updateTimeStamp))
 	l.packetDB.Put(packetKey, packet, nil)
 }
 
