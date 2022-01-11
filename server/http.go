@@ -21,9 +21,9 @@ func NewHttpApi(addr string, db DBOperation) *HttpApi {
 }
 
 func (h *HttpApi) Serve() {
-	http.HandleFunc("/get_session", h.queryBySessionId)
-	http.HandleFunc("/get_caller", h.queryByCaller)
-	http.HandleFunc("/get_callee", h.queryByCallee)
+	http.HandleFunc("/sip/get_session", h.queryBySessionId)
+	http.HandleFunc("/sip/get_caller", h.queryByCaller)
+	http.HandleFunc("/sip/get_callee", h.queryByCallee)
 	http.ListenAndServe(h.addr, nil)
 }
 

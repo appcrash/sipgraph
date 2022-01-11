@@ -123,7 +123,7 @@ func (a *analyzer) analyzePacket(packet []byte) {
 			case "from":
 				cm := regPhone.FindSubmatch(v)
 				if cm == nil {
-					logger.Errorf("invalid from header value: %v", v)
+					logger.Errorf("invalid from header value: %v", string(v))
 					return
 				}
 				si.Caller = string(cm[1])
@@ -131,7 +131,7 @@ func (a *analyzer) analyzePacket(packet []byte) {
 			case "to":
 				cm := regPhone.FindSubmatch(v)
 				if cm == nil {
-					logger.Errorf("invalid to header value: %v", v)
+					logger.Errorf("invalid to header value: %v", string(v))
 					return
 				}
 				si.Callee = string(cm[1])
@@ -167,7 +167,7 @@ func (a *analyzer) analyzePacket(packet []byte) {
 		}
 	}
 
-	logger.Errorf("invalid Packet without enough info:\n%v\n", packet)
+	logger.Errorf("invalid Packet without enough info:\n%v\n", string(packet))
 }
 
 func (a *analyzer) removeExpiredSession() {

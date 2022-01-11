@@ -63,7 +63,7 @@ def timestamp(time_range):
 
 def url(method,query_id,time_range):
     ts = timestamp(time_range)
-    return 'http://%s:%d/%s?id=%s&ts_start=%s&ts_end=%s' % (HOST,PORT,method,query_id,ts[0],ts[1])
+    return 'http://%s:%d/sip/%s?id=%s&ts_start=%s&ts_end=%s' % (HOST,PORT,method,query_id,ts[0],ts[1])
 
 def format_session(session):
     sid = session['session_id']
