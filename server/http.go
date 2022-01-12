@@ -52,7 +52,7 @@ func (h *HttpApi) queryBySessionId(w http.ResponseWriter, r *http.Request) {
 			data = jsonData
 		}
 	done:
-		w.Header().Set("Content-Type", "application/json,charset=utf-8")
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		w.Write(data)
 	} else {
@@ -100,7 +100,7 @@ func (h *HttpApi) queryByIndex(w http.ResponseWriter, r *http.Request, field str
 		sis = h.db.GetSessionByCallee(id[0], tsStart, tsEnd)
 	}
 
-	w.Header().Set("Content-Type", "application/json,charset=utf-8")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 
 	if sis != nil {
